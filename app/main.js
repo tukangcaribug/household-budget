@@ -3,6 +3,7 @@
 //   #/                dashboard for the chosen month
 //   #/transactions    add, edit, delete, search and filter transactions
 //   #/budgets         monthly budget per category
+//   #/bills           recurring monthly bills and what is paid
 //   #/goals           savings goals and adding funds
 //   #/reports         six-month trend, breakdown and insights
 //
@@ -12,10 +13,10 @@
 import { CATEGORIES, defaultBudget } from './data.js';
 import {
   loadState, saveState, resetState, CURRENT_MONTH,
-  monthOf, shiftMonth, allMonths, newId,
+  monthOf, shiftMonth, allMonths, monthTransactions, newId,
 } from './store.js';
 import {
-  dashboardPage, transactionsPage, budgetsPage, goalsPage, reportsPage,
+  dashboardPage, transactionsPage, budgetsPage, billsPage, goalsPage, reportsPage,
   notFoundPage, transactionForm,
 } from './views.js';
 
@@ -29,6 +30,7 @@ function route() {
   const hash = location.hash || '#/';
   if (hash.startsWith('#/transactions')) return 'transactions';
   if (hash.startsWith('#/budgets')) return 'budgets';
+  if (hash.startsWith('#/bills')) return 'bills';
   if (hash.startsWith('#/goals')) return 'goals';
   if (hash.startsWith('#/reports')) return 'reports';
   if (hash === '#/' || hash === '' || hash === '#') return 'dashboard';
@@ -47,6 +49,7 @@ function render() {
   if (page === 'dashboard') { html = dashboardPage(ctx); title = 'The Alvarez Household — Family Ledger'; }
   else if (page === 'transactions') { html = transactionsPage(ctx); title = 'Transactions | The Alvarez Household'; }
   else if (page === 'budgets') { html = budgetsPage(ctx); title = 'Budgets | The Alvarez Household'; }
+  else if (page === 'bills') { html = billsPage(ctx); title = 'Recurring Bills | The Alvarez Household'; }
   else if (page === 'goals') { html = goalsPage(ctx); title = 'Savings Goals | The Alvarez Household'; }
   else if (page === 'reports') { html = reportsPage(ctx); title = 'Reports | The Alvarez Household'; }
   else { html = notFoundPage(); title = 'Not found | The Alvarez Household'; }
@@ -107,6 +110,20 @@ app.addEventListener('submit', (event) => {
     render();
     const note = document.getElementById('budgets-saved');
     if (note) note.textContent = 'Saved — the dashboard already shows the new limits.';
+    return;
+  }
+  if (formId === 'bill-form') {
+    const data = new FormData(form);
+    const name = String(data.get('name') || '').trim();
+    const amount = Math.round(Number(data.get('amount')) * 100) / 100;
+    const dueDay = Math.max(1, Math.min(28, Math.round(Number(data.get('dueDay')))));
+    const category = String(data.get('category') || '');
+    const note = String(data.get('note') || '').trim();
+    const validCategory = CATEGORIES.expense.some((c) => c.name === category);
+    if (!name || !(amount > 0) || !Number.isFinite(dueDay) || !validCategory) return;
+    state.bills.push({ id: newId(state), name, amount, dueDay, category, note });
+    saveState(state);
+    render();
     return;
   }
   if (formId === 'goal-form') {
@@ -191,6 +208,31 @@ app.addEventListener('click', (event) => {
       saveState(state);
       render();
     }
+    return;
+  }
+  if (el.dataset.deleteBill) {
+    const b = state.bills.find((x) => x.id === el.dataset.deleteBill);
+    if (b && window.confirm(`Remove the recurring bill "${b.name}"?`)) {
+      state.bills = state.bills.filter((x) => x.id !== b.id);
+      saveState(state);
+      render();
+    }
+    return;
+  }
+  if (el.hasAttribute('data-export-csv')) {
+    const list = monthTransactions(state, month)
+      .filter((t) => (filter.type === 'all' || t.type === filter.type)
+        && (filter.category === 'all' || t.category === filter.category)
+        && (!filter.q || t.note.toLowerCase().includes(filter.q.trim().toLowerCase()) || t.category.toLowerCase().includes(filter.q.trim().toLowerCase())));
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [['Date', 'Type', 'Category', 'Amount (USD)', 'Note'].map(esc).join(',')];
+    for (const t of list) lines.push([t.date, t.type, t.category, t.amount.toFixed(2), t.note].map(esc).join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `alvarez-transactions-${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
     return;
   }
   if (el.hasAttribute('data-cancel-edit')) {

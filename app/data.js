@@ -41,6 +41,21 @@ export const GOALS_SEED = [
   { id: 'g4', name: "Kids' college fund", target: 10000, saved: 1400, note: 'A little each month for Sofia and Leo, started this year.' },
 ];
 
+// Recurring monthly bills: the fixed payments the household must not miss.
+// `dueDay` is the day of the month the bill falls due; `amount` is the usual
+// amount (utility bills vary a little, so "paid" is detected generously — see
+// billStatus in store.js). `category` ties each bill to the transactions that
+// pay it, so the bills page can tell at a glance what is settled and what is
+// still to pay.
+export const BILLS_SEED = [
+  { id: 'b1', name: 'Rent', amount: 1650, dueDay: 1, category: 'Housing', note: 'Monthly rent, paid on the 1st.' },
+  { id: 'b2', name: 'Electric bill', amount: 95, dueDay: 3, category: 'Utilities', note: 'Varies with the season — about $90–$105.' },
+  { id: 'b3', name: 'Internet', amount: 65, dueDay: 8, category: 'Utilities', note: 'Fibre, same amount every month.' },
+  { id: 'b4', name: 'Water bill', amount: 54, dueDay: 16, category: 'Utilities', note: 'Varies a little with usage.' },
+  { id: 'b5', name: 'Streaming', amount: 15.99, dueDay: 19, category: 'Entertainment', note: 'Family streaming subscription.' },
+  { id: 'b6', name: 'Bus passes', amount: 96, dueDay: 21, category: 'Transport', note: 'Monthly passes for Marco and Elena.' },
+];
+
 // Each row: [date, type, category, amount, note]
 const SEED_ROWS = [
   // ---- June 2026 ----

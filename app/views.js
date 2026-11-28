@@ -2,7 +2,7 @@
 // before it goes into the page, and every control below does what it says.
 
 import { CATEGORIES, categoryColor, defaultBudget } from './data.js';
-import { money, shortDate, monthLabel, monthSummary, monthTransactions, allMonths } from './store.js';
+import { money, shortDate, monthLabel, monthSummary, monthTransactions, allMonths, billStatus } from './store.js';
 import { donutChart, trendChart } from './charts.js';
 
 const escape = (s) => String(s).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -89,6 +89,16 @@ export function dashboardPage(ctx) {
   const { state, month } = ctx;
   const months = allMonths(state);
   const s = monthSummary(state, month);
+  const prevMonth = months[months.indexOf(month) - 1];
+  const prev = prevMonth ? monthSummary(state, prevMonth) : null;
+  const prevShort = prevMonth ? new Date(Date.UTC(...prevMonth.split('-').map((v, i) => (i === 1 ? Number(v) - 1 : Number(v))))).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) : '';
+  const delta = (now, was) => {
+    if (!prev || was === 0) return '';
+    const d = now - was;
+    const sign = d > 0 ? '+' : d < 0 ? '−' : '';
+    return `<div class="delta">${sign}${money(Math.abs(d))} vs ${escape(prevShort)}</div>`;
+  };
+  const savingsRate = s.income > 0 ? Math.round((s.remaining / s.income) * 100) : 0;
   const recent = monthTransactions(state, month).slice(0, 8);
   const parts = Object.entries(s.byCategory)
     .map(([name, value]) => ({ label: name, value, color: categoryColor(name) }))
@@ -99,6 +109,11 @@ export function dashboardPage(ctx) {
     .filter(([name, b]) => (s.byCategory[name] || 0) > b)
     .map(([name]) => name);
   const topSpend = parts.slice(0, 3);
+  const bills = state.bills
+    .map((b) => ({ bill: b, st: billStatus(state, b, month) }))
+    .sort((a, b) => a.st.due - b.st.due);
+  const unpaid = bills.filter((x) => !x.st.paid);
+  const stillToPay = unpaid.reduce((a, x) => a + x.bill.amount, 0);
   return `
   <div class="page-head">
     <div>
@@ -111,13 +126,15 @@ export function dashboardPage(ctx) {
   ${over.length ? `<div class="callout"><h2>Heads up: ${escape(over.join(', '))} ${over.length > 1 ? 'are' : 'is'} over budget</h2>
     <p>${escape(over.join(', '))} ${over.length > 1 ? 'have' : 'has'} passed the monthly limit. A look at the <a href="#/budgets" style="color:#f7d98a">budgets page</a> shows where the month stands.</p></div>` : ''}
 
-  <div class="grid-3">
+  <div class="grid-4">
     <section class="card tile"><div class="label">Income in ${escape(monthLabel(month))}</div>
-      <div class="num in">${money(s.income)}</div><div class="sub">Pay, freelance and refunds</div></section>
+      <div class="num in">${money(s.income)}</div><div class="sub">Pay, freelance and refunds</div>${delta(s.income, prev ? prev.income : 0)}</section>
     <section class="card tile"><div class="label">Spending</div>
-      <div class="num out">${money(s.spending)}</div><div class="sub">${budgetUsed}% of the ${money(totalBudget)} monthly budget</div></section>
+      <div class="num out">${money(s.spending)}</div><div class="sub">${budgetUsed}% of the ${money(totalBudget)} monthly budget</div>${delta(s.spending, prev ? prev.spending : 0)}</section>
     <section class="card tile remaining"><div class="label">Left over</div>
-      <div class="num">${money(s.remaining)}</div><div class="sub">${s.remaining >= 0 ? 'Still in the pot for the rest of the month' : 'Over the month’s income — time to trim'}</div></section>
+      <div class="num">${money(s.remaining)}</div><div class="sub">${s.remaining >= 0 ? 'Still in the pot for the rest of the month' : 'Over the month’s income — time to trim'}</div>${delta(s.remaining, prev ? prev.remaining : 0)}</section>
+    <section class="card tile rate"><div class="label">Savings rate</div>
+      <div class="num">${savingsRate}%</div><div class="sub">Of this month’s income left over</div><div class="delta">${savingsRate >= 20 ? 'On track — the 20% habit holds' : savingsRate >= 0 ? 'Below the 20% habit' : 'Spending ate the savings'}</div></section>
   </div>
 
   <div class="grid-2wide">
@@ -138,6 +155,13 @@ export function dashboardPage(ctx) {
       <p style="margin-top:12px"><a class="btn" href="#/transactions">Add a transaction</a> <a class="btn ghost" href="#/reports">See the full report</a></p>
     </section>
   </div>
+
+  <section class="card">
+    <h2>Bills due in ${escape(monthLabel(month))}</h2>
+    <p class="muted">${bills.filter((x) => x.st.paid).length} of ${bills.length} paid · ${unpaid.length ? `${money(stillToPay)} still to pay` : 'Everything is settled for this month.'}</p>
+    ${bills.map(({ bill, st }) => `<div class="kv"><span><span class="dot" style="background:${categoryColor(bill.category)}"></span>${escape(bill.name)}<span class="note">${escape(bill.category)} · due ${escape(st.dueLabel)}</span></span><span><b>${money(bill.amount)}</b> <span class="pill ${st.kind === 'paid' ? 'ok' : st.kind === 'overdue' || st.kind === 'due-today' ? 'over' : ''}">${escape(st.label)}</span></span></div>`).join('')}
+    <p style="margin-top:12px"><a class="btn ghost" href="#/bills">Manage recurring bills</a></p>
+  </section>
 
   <section class="card">
     <h2>Latest entries</h2>
@@ -185,6 +209,7 @@ export function transactionsPage(ctx) {
         <option value="all">All categories</option>
         ${cats.map((c) => `<option value="${escape(c)}" ${filter.category === c ? 'selected' : ''}>${escape(c)}</option>`).join('')}
       </select>
+      <button type="button" class="btn ghost small" data-export-csv>Export these as CSV</button>
     </div>
     <p class="muted">${list.length} ${list.length === 1 ? 'entry' : 'entries'} shown · <b style="color:var(--green)">+${money(inc)} in</b> · <b>${money(exp)} out</b></p>
     <table class="ledger">
@@ -243,6 +268,71 @@ export function budgetsPage(ctx) {
   <section class="card">
     <h2>How the limits were set</h2>
     <p>Housing is the fixed rent. Groceries and transport come from the last three months’ average, rounded up a little for a growing family. Dining out and entertainment are the fun money — small on purpose, so the savings goal still gets its share.</p>
+  </section>`;
+}
+
+// ---------------- Bills ----------------
+
+export function billsPage(ctx) {
+  const { state, month } = ctx;
+  const months = allMonths(state);
+  const rows = state.bills
+    .map((b) => ({ bill: b, st: billStatus(state, b, month) }))
+    .sort((a, b) => a.st.due - b.st.due);
+  const dueTotal = rows.reduce((a, x) => a + x.bill.amount, 0);
+  const paidTotal = rows.filter((x) => x.st.paid).reduce((a, x) => a + x.bill.amount, 0);
+  const unpaid = rows.filter((x) => !x.st.paid);
+  const cats = CATEGORIES.expense.map((c) => `<option value="${escape(c.name)}">${escape(c.name)}</option>`).join('');
+  return `
+  <div class="page-head">
+    <div>
+      <h1>Recurring bills</h1>
+      <p class="lede">The payments that come back every month — rent, utilities, passes and subscriptions. A bill counts as paid when the ledger shows a matching payment in this month, so nothing here needs ticking by hand.</p>
+    </div>
+    ${monthSwitcher(month, months)}
+  </div>
+
+  <section class="card">
+    <h2>${escape(monthLabel(month))} at a glance</h2>
+    <div class="grid-3" style="margin-bottom:4px">
+      <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Due this month</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green-deep)">${money(dueTotal)}</div></div>
+      <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Already paid</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green)">${money(paidTotal)}</div></div>
+      <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Still to pay</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--red)">${money(dueTotal - paidTotal)}</div></div>
+    </div>
+    ${unpaid.length ? `<p class="muted">Next up: <b style="color:var(--green-deep)">${escape(unpaid[0].bill.name)}</b> — ${escape(unpaid[0].st.label.toLowerCase())} (${money(unpaid[0].bill.amount)}).</p>` : '<p class="muted">Every bill for this month is settled.</p>'}
+    ${rows.map(({ bill, st }) => `<div class="bill-row">
+      <div class="bill-main">
+        <span class="cat"><span class="dot" style="background:${categoryColor(bill.category)}"></span>${escape(bill.name)}</span>
+        <span class="note">${escape(bill.note)}</span>
+        <span class="muted" style="font-size:.88rem">${escape(bill.category)} · due the ${bill.dueDay}${bill.dueDay === 1 ? 'st' : bill.dueDay === 2 ? 'nd' : bill.dueDay === 3 ? 'rd' : 'th'} of the month</span>
+      </div>
+      <div class="bill-side">
+        <b>${money(bill.amount)}</b>
+        <span class="pill ${st.kind === 'paid' ? 'ok' : st.kind === 'overdue' || st.kind === 'due-today' ? 'over' : ''}">${escape(st.label)}</span>
+        ${st.paid ? `<span class="muted" style="font-size:.85rem">Paid ${money(st.paidAmount)}</span>` : ''}
+        <button type="button" class="del" data-delete-bill="${bill.id}">Remove</button>
+      </div>
+    </div>`).join('')}
+  </section>
+
+  <section class="card">
+    <h2>Add a recurring bill</h2>
+    <form id="bill-form" method="dialog">
+      <div class="form-grid">
+        <div class="field"><label for="bill-name">Bill name</label>
+          <input id="bill-name" name="name" type="text" placeholder="e.g. Piano lessons" maxlength="80" required></div>
+        <div class="field"><label for="bill-amount">Usual amount (USD)</label>
+          <input id="bill-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required></div>
+        <div class="field"><label for="bill-day">Due day of month</label>
+          <input id="bill-day" name="dueDay" type="number" min="1" max="28" step="1" value="1" required></div>
+        <div class="field"><label for="bill-category">Category</label>
+          <select id="bill-category" name="category">${cats}</select></div>
+        <div class="field full"><label for="bill-note">Note</label>
+          <input id="bill-note" name="note" type="text" placeholder="A short note — what is this for?" maxlength="140"></div>
+      </div>
+      <div class="form-actions"><button class="btn amber" type="submit">Add bill</button>
+      <span class="form-note">Paid status is read from the month’s transactions — add a matching payment and the bill shows as paid.</span></div>
+    </form>
   </section>`;
 }
 
@@ -315,6 +405,8 @@ export function reportsPage(ctx) {
   const avgIncome = trend.reduce((a, m) => a + m.income, 0) / Math.max(1, trend.length);
   const best = [...trend].sort((a, b) => b.remaining - a.remaining)[0];
   const worst = [...trend].sort((a, b) => a.remaining - b.remaining)[0];
+  const ytd = trend.reduce((a, m) => ({ income: a.income + m.income, spending: a.spending + m.spending, remaining: a.remaining + m.remaining }), { income: 0, spending: 0, remaining: 0 });
+  const ytdRate = ytd.income > 0 ? Math.round((ytd.remaining / ytd.income) * 100) : 0;
   const s = monthSummary(state, month);
   const parts = Object.entries(s.byCategory)
     .map(([name, value]) => ({ label: name, value, color: categoryColor(name) }))
@@ -341,6 +433,15 @@ export function reportsPage(ctx) {
       <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Average income / month</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green-deep)">${money(avgIncome)}</div></div>
       <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Average spending / month</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green-deep)">${money(avgSpend)}</div></div>
       <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Average left over / month</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green-deep)">${money(avgIncome - avgSpend)}</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>So far this year — ${escape(trend[0].short)} to ${escape(trend[trend.length - 1].short)} 2026</h2>
+    <div class="grid-3">
+      <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Total income</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green-deep)">${money(ytd.income)}</div></div>
+      <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Total spending</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green-deep)">${money(ytd.spending)}</div></div>
+      <div><div class="label" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)">Saved in ${trend.length} months</div><div class="num" style="font-size:1.5rem;font-weight:bold;color:var(--green)">${money(ytd.remaining)}</div><div class="sub">${ytdRate}% of income kept</div></div>
     </div>
   </section>
 

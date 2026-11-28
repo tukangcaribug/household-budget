@@ -188,10 +188,30 @@ svg text { font-family: Georgia, "Times New Roman", serif; }
 .callout h2 { color: #f7d98a; margin-bottom: 4px; }
 .callout p { margin-bottom: 0; color: #e3dcc2; }
 
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.tile.rate { background: #fdf6e3; }
+.tile.rate .num { color: var(--amber); }
+.delta { font-size: 0.85rem; color: var(--ink-soft); margin-top: 2px; }
+.tile.remaining .delta { color: #cfc6a8; }
+
+/* Bills */
+.bill-row {
+  display: flex; gap: 16px; align-items: flex-start; justify-content: space-between;
+  padding: 13px 0; border-bottom: 1px solid #eee5cb; flex-wrap: wrap;
+}
+.bill-row:last-child { border-bottom: 0; }
+.bill-main { flex: 1; min-width: 220px; }
+.bill-main .cat { font-weight: bold; color: var(--green-deep); display: block; }
+.bill-main .note { margin: 2px 0; }
+.bill-side { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.bill-side b { color: var(--green-deep); }
+button.del { background: none; border: 0; color: var(--red); text-decoration: underline; padding: 2px 4px; font-size: 0.88rem; }
+
 /* Responsive */
 @media (max-width: 760px) {
   body { font-size: 16px; }
   .grid-3, .grid-2, .grid-2wide { grid-template-columns: 1fr; }
+  .grid-4 { grid-template-columns: 1fr 1fr; }
   .form-grid { grid-template-columns: 1fr 1fr; }
   .field.full { grid-column: 1 / -1; }
   .masthead-inner { padding: 12px 14px; }
@@ -205,5 +225,6 @@ svg text { font-family: Georgia, "Times New Roman", serif; }
 }
 @media (max-width: 420px) {
   .form-grid { grid-template-columns: 1fr; }
+  .grid-4 { grid-template-columns: 1fr; }
   .goal form.add-funds { width: 100%; }
 }
